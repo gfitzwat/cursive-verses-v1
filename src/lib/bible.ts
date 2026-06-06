@@ -19,6 +19,11 @@ export function verseRef(v: BibleVerse) {
 	return `${v.book_name} ${v.chapter}:${v.verse}`;
 }
 
+export function cleanText(text: string): string {
+	// Strip paragraph markers (¶), section headings in brackets, and extra whitespace
+	return text.replace(/[¶‹›]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 export function searchVerses(verses: BibleVerse[], query: string): BibleVerse[] {
 	const q = query.toLowerCase().trim();
 	if (!q) return [];
