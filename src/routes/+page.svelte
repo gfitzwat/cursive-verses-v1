@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { PageData } from './$types';
 	import { verseRef, cleanText, TRANSLATIONS, type BibleVerse } from '$lib/bible';
-	import { chunkWords, FONT_SIZE, LINE_HEIGHT, BASELINE, CAP_HEIGHT, X_HEIGHT, DESCENDER, type WorksheetStyle } from '$lib/worksheet';
+	import { wrapText, FONT_SIZE, LINE_HEIGHT, BASELINE, CAP_HEIGHT, X_HEIGHT, DESCENDER, type WorksheetStyle } from '$lib/worksheet';
 
 	let { data }: { data: PageData } = $props();
 
@@ -10,14 +11,25 @@
 	let selectedVerse = $state<BibleVerse | null>(null);
 	let style = $state<WorksheetStyle>('cursive');
 	let mode = $state<'tracing' | 'copywork'>('tracing');
-	let copyLines = $state(3);
 
-	// Reset selections when translation changes
+	// A letter page fits ~10 ruled lines at current font/line-height.
+	// Fill the rest with blank practice lines after the verse.
+	const PAGE_LINES = 10;
+	let blankLines = $derived(Math.max(2, PAGE_LINES - lines.length));
+
+	// When translation changes, re-find the same verse in the new translation.
+	// Use untrack() to read selectedVerse without making it a dependency of this
+	// effect — otherwise writing selectedVerse would re-trigger the effect.
 	$effect(() => {
-		data.translation;
-		selectedBookId = null;
-		selectedChapter = null;
-		selectedVerse = null;
+		const _t = data.translation; // only track translation changes
+		const current = untrack(() => selectedVerse);
+		if (current !== null) {
+			selectedVerse = data.verses.find(
+				(v) => v.book === current.book &&
+					   v.chapter === current.chapter &&
+					   v.verse === current.verse
+			) ?? null;
+		}
 	});
 
 	let chapters = $derived(
@@ -32,10 +44,18 @@
 			: data.verses.filter((v) => v.book === selectedBookId && v.chapter === selectedChapter)
 	);
 
-	let lines = $derived(selectedVerse ? chunkWords(cleanText(selectedVerse.text)) : []);
+	// Strip quotes for canvas font spec (canvas needs: 44px LearningCurve, not 'LearningCurve')
+	let canvasFont = $derived(FONT_FAMILY.replace(/'/g, ''));
+	let lines = $derived(
+		selectedVerse
+			? wrapText(cleanText(selectedVerse.text), canvasFont, FONT_SIZE, SVG_WIDTH - 16)
+			: []
+	);
 
-	const SVG_WIDTH = 750;
-	const FONT_FAMILY = "Caveat, cursive";
+	const SVG_WIDTH = 1000;
+	let FONT_FAMILY = $derived(style === 'cursive' ? "'LearningCurve', cursive" : "'Handlee', cursive");
+	// For print tracing, Handlee has no built-in dashes so we rely on the light fill colour
+	let FONT_FAMILY_DASHED = $derived(style === 'cursive' ? "'LearningCurveDashed', cursive" : "'Handlee', cursive");
 
 	function onBookChange(e: Event) {
 		const val = (e.target as HTMLSelectElement).value;
@@ -94,7 +114,7 @@
 				<!-- Book -->
 				<div>
 					<label for="book-select" class="text-xs text-slate-500 block mb-1">Book</label>
-					<select id="book-select" onchange={onBookChange}
+					<select id="book-select" onchange={onBookChange} value={selectedBookId ?? ''}
 						class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
 						<option value="">— Select a book —</option>
 						{#each data.books as book}
@@ -106,7 +126,7 @@
 				<!-- Chapter -->
 				<div>
 					<label for="chapter-select" class="text-xs text-slate-500 block mb-1">Chapter</label>
-					<select id="chapter-select" onchange={onChapterChange} disabled={chapters.length === 0}
+					<select id="chapter-select" onchange={onChapterChange} disabled={chapters.length === 0} value={selectedChapter ?? ''}
 						class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white disabled:opacity-40">
 						<option value="">— Select a chapter —</option>
 						{#each chapters as ch}
@@ -119,10 +139,11 @@
 				<div>
 					<label for="verse-select" class="text-xs text-slate-500 block mb-1">Verse</label>
 					<select id="verse-select" onchange={onVerseChange} disabled={chapterVerses.length === 0}
+						value={selectedVerse ? `${selectedVerse.chapter}:${selectedVerse.verse}` : ''}
 						class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white disabled:opacity-40">
 						<option value="">— Select a verse —</option>
 						{#each chapterVerses as v}
-							<option value="{v.chapter}:{v.verse}">v.{v.verse} — {v.text.slice(0, 50)}{v.text.length > 50 ? '…' : ''}</option>
+								<option value="{v.chapter}:{v.verse}">v.{v.verse} — {cleanText(v.text).slice(0, 50)}{cleanText(v.text).length > 50 ? "…" : ""}</option>
 						{/each}
 					</select>
 				</div>
@@ -160,12 +181,6 @@
 					</div>
 				</div>
 
-				{#if mode === 'copywork'}
-					<div>
-						<label class="text-xs text-slate-500 block mb-1">Blank lines to copy: {copyLines}</label>
-						<input type="range" min="1" max="6" bind:value={copyLines} class="w-full" />
-					</div>
-				{/if}
 
 				{#if selectedVerse}
 					<button onclick={() => window.print()}
@@ -198,62 +213,29 @@
 					<p class="text-slate-400 text-sm text-center py-8">Worksheet will appear here</p>
 				{:else}
 					<p class="text-xs text-slate-400 mb-3 text-center">{style} &bull; {mode}</p>
+					<!-- All verse lines grouped -->
 					{#each lines as line}
-						<svg viewBox="0 0 {SVG_WIDTH} {LINE_HEIGHT}" width="100%" xmlns="http://www.w3.org/2000/svg" class="block">
-							<!-- Ruled lines -->
+						<svg viewBox="0 0 {SVG_WIDTH} {LINE_HEIGHT}" width="100%" xmlns="http://www.w3.org/2000/svg" overflow="visible" class="block">
 							<line x1="0" y1={DESCENDER} x2={SVG_WIDTH} y2={DESCENDER} stroke="#f1f5f9" stroke-width="1"/>
 							<line x1="0" y1={BASELINE} x2={SVG_WIDTH} y2={BASELINE} stroke="#cbd5e1" stroke-width="1"/>
 							<line x1="0" y1={X_HEIGHT} x2={SVG_WIDTH} y2={X_HEIGHT} stroke="#e2e8f0" stroke-width="0.75" stroke-dasharray="4,4"/>
 							<line x1="0" y1={CAP_HEIGHT} x2={SVG_WIDTH} y2={CAP_HEIGHT} stroke="#e2e8f0" stroke-width="0.75" stroke-dasharray="2,6"/>
-
 							{#if mode === 'tracing'}
-								<!-- Dotted trace text -->
-								<text
-									x="8" y={BASELINE}
-									font-family={FONT_FAMILY}
-									font-size={FONT_SIZE}
-									font-weight={style === 'cursive' ? '600' : '400'}
-									fill="none"
-									stroke="#c7d2fe"
-									stroke-width="8"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									paint-order="stroke"
-								>{line}</text>
-								<text
-									x="8" y={BASELINE}
-									font-family={FONT_FAMILY}
-									font-size={FONT_SIZE}
-									font-weight={style === 'cursive' ? '600' : '400'}
-									fill="#e0e7ff"
-									stroke="#a5b4fc"
-									stroke-width="2"
-									stroke-dasharray="6,5"
-									paint-order="stroke fill"
-								>{line}</text>
+								<text x="8" y={BASELINE} font-family={FONT_FAMILY_DASHED} font-size={FONT_SIZE} fill="#94a3b8">{line}</text>
 							{:else}
-								<!-- Solid reference text -->
-								<text
-									x="8" y={BASELINE}
-									font-family={FONT_FAMILY}
-									font-size={FONT_SIZE}
-									font-weight={style === 'cursive' ? '600' : '400'}
-									fill="#334155"
-								>{line}</text>
+								<text x="8" y={BASELINE} font-family={FONT_FAMILY} font-size={FONT_SIZE} fill="#334155">{line}</text>
 							{/if}
 						</svg>
+					{/each}
 
-						{#if mode === 'copywork'}
-							<!-- Blank ruled lines to copy onto -->
-							{#each Array(copyLines) as _}
-								<svg viewBox="0 0 {SVG_WIDTH} {LINE_HEIGHT}" width="100%" xmlns="http://www.w3.org/2000/svg" class="block">
-									<line x1="0" y1={DESCENDER} x2={SVG_WIDTH} y2={DESCENDER} stroke="#f1f5f9" stroke-width="1"/>
-									<line x1="0" y1={BASELINE} x2={SVG_WIDTH} y2={BASELINE} stroke="#cbd5e1" stroke-width="1"/>
-									<line x1="0" y1={X_HEIGHT} x2={SVG_WIDTH} y2={X_HEIGHT} stroke="#e2e8f0" stroke-width="0.75" stroke-dasharray="4,4"/>
-									<line x1="0" y1={CAP_HEIGHT} x2={SVG_WIDTH} y2={CAP_HEIGHT} stroke="#e2e8f0" stroke-width="0.75" stroke-dasharray="2,6"/>
-								</svg>
-							{/each}
-						{/if}
+					<!-- Blank practice lines filling the rest of the page -->
+					{#each Array(blankLines) as _}
+						<svg viewBox="0 0 {SVG_WIDTH} {LINE_HEIGHT}" width="100%" xmlns="http://www.w3.org/2000/svg" overflow="visible" class="block">
+							<line x1="0" y1={DESCENDER} x2={SVG_WIDTH} y2={DESCENDER} stroke="#f1f5f9" stroke-width="1"/>
+							<line x1="0" y1={BASELINE} x2={SVG_WIDTH} y2={BASELINE} stroke="#cbd5e1" stroke-width="1"/>
+							<line x1="0" y1={X_HEIGHT} x2={SVG_WIDTH} y2={X_HEIGHT} stroke="#e2e8f0" stroke-width="0.75" stroke-dasharray="4,4"/>
+							<line x1="0" y1={CAP_HEIGHT} x2={SVG_WIDTH} y2={CAP_HEIGHT} stroke="#e2e8f0" stroke-width="0.75" stroke-dasharray="2,6"/>
+						</svg>
 					{/each}
 
 					<p class="text-xs text-slate-400 mt-2 italic text-right">
@@ -275,39 +257,29 @@
 			</footer>
 		</blockquote>
 
+		<!-- All verse lines grouped -->
 		{#each lines as line}
-			<svg viewBox="0 0 {SVG_WIDTH} {LINE_HEIGHT}" width="100%" xmlns="http://www.w3.org/2000/svg" class="block">
+			<svg viewBox="0 0 {SVG_WIDTH} {LINE_HEIGHT}" width="100%" xmlns="http://www.w3.org/2000/svg" overflow="visible" class="block">
 				<line x1="0" y1={DESCENDER} x2={SVG_WIDTH} y2={DESCENDER} stroke="#e2e8f0" stroke-width="1"/>
 				<line x1="0" y1={BASELINE} x2={SVG_WIDTH} y2={BASELINE} stroke="#94a3b8" stroke-width="1"/>
 				<line x1="0" y1={X_HEIGHT} x2={SVG_WIDTH} y2={X_HEIGHT} stroke="#cbd5e1" stroke-width="0.75" stroke-dasharray="4,4"/>
 				<line x1="0" y1={CAP_HEIGHT} x2={SVG_WIDTH} y2={CAP_HEIGHT} stroke="#cbd5e1" stroke-width="0.75" stroke-dasharray="2,6"/>
-
 				{#if mode === 'tracing'}
-					<text x="8" y={BASELINE} font-family={FONT_FAMILY} font-size={FONT_SIZE}
-						font-weight={style === 'cursive' ? '600' : '400'}
-						fill="none" stroke="#c7d2fe" stroke-width="8"
-						stroke-linecap="round" stroke-linejoin="round" paint-order="stroke">{line}</text>
-					<text x="8" y={BASELINE} font-family={FONT_FAMILY} font-size={FONT_SIZE}
-						font-weight={style === 'cursive' ? '600' : '400'}
-						fill="#e0e7ff" stroke="#a5b4fc" stroke-width="2"
-						stroke-dasharray="6,5" paint-order="stroke fill">{line}</text>
+					<text x="8" y={BASELINE} font-family={FONT_FAMILY_DASHED} font-size={FONT_SIZE} fill="#94a3b8">{line}</text>
 				{:else}
-					<text x="8" y={BASELINE} font-family={FONT_FAMILY} font-size={FONT_SIZE}
-						font-weight={style === 'cursive' ? '600' : '400'}
-						fill="#1e293b">{line}</text>
+					<text x="8" y={BASELINE} font-family={FONT_FAMILY} font-size={FONT_SIZE} fill="#1e293b">{line}</text>
 				{/if}
 			</svg>
+		{/each}
 
-			{#if mode === 'copywork'}
-				{#each Array(copyLines) as _}
-					<svg viewBox="0 0 {SVG_WIDTH} {LINE_HEIGHT}" width="100%" xmlns="http://www.w3.org/2000/svg" class="block">
-						<line x1="0" y1={DESCENDER} x2={SVG_WIDTH} y2={DESCENDER} stroke="#e2e8f0" stroke-width="1"/>
-						<line x1="0" y1={BASELINE} x2={SVG_WIDTH} y2={BASELINE} stroke="#94a3b8" stroke-width="1"/>
-						<line x1="0" y1={X_HEIGHT} x2={SVG_WIDTH} y2={X_HEIGHT} stroke="#cbd5e1" stroke-width="0.75" stroke-dasharray="4,4"/>
-						<line x1="0" y1={CAP_HEIGHT} x2={SVG_WIDTH} y2={CAP_HEIGHT} stroke="#cbd5e1" stroke-width="0.75" stroke-dasharray="2,6"/>
-					</svg>
-				{/each}
-			{/if}
+		<!-- Blank practice lines filling the rest of the page -->
+		{#each Array(blankLines) as _}
+			<svg viewBox="0 0 {SVG_WIDTH} {LINE_HEIGHT}" width="100%" xmlns="http://www.w3.org/2000/svg" overflow="visible" class="block">
+				<line x1="0" y1={DESCENDER} x2={SVG_WIDTH} y2={DESCENDER} stroke="#e2e8f0" stroke-width="1"/>
+				<line x1="0" y1={BASELINE} x2={SVG_WIDTH} y2={BASELINE} stroke="#94a3b8" stroke-width="1"/>
+				<line x1="0" y1={X_HEIGHT} x2={SVG_WIDTH} y2={X_HEIGHT} stroke="#cbd5e1" stroke-width="0.75" stroke-dasharray="4,4"/>
+				<line x1="0" y1={CAP_HEIGHT} x2={SVG_WIDTH} y2={CAP_HEIGHT} stroke="#cbd5e1" stroke-width="0.75" stroke-dasharray="2,6"/>
+			</svg>
 		{/each}
 
 		<p class="text-xs text-gray-400 mt-4 text-right italic">
