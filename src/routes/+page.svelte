@@ -12,6 +12,7 @@
 	let mode = $state<'tracing' | 'copywork'>('tracing');
 	let printSection = $state<HTMLElement | null>(null);
 	let printRenderKey = $state(0);
+	let pdfLoading = $state(false);
 
 	// 0 = nothing, 1 = book, 2 = chapter, 3 = verse
 	let selectionProgress = $derived(
@@ -196,6 +197,88 @@
 		await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 		window.print();
 	}
+
+	async function downloadPdf() {
+		if (!selectedVerse) return;
+		pdfLoading = true;
+		try {
+			const { default: jsPDF } = await import('jspdf');
+			await document.fonts.ready;
+
+			// Letter page at 2× for quality: 8.5" × 11" @ 96dpi × 2
+			const SC = 2;
+			const PAGE_W = Math.round(8.5 * 96 * SC);
+			const PAGE_H = Math.round(11  * 96 * SC);
+			const MARGIN = Math.round(0.5  * 96 * SC);
+			const CONTENT_W = PAGE_W - MARGIN * 2;
+
+			// Scale from SVG user units (0–1000) → canvas pixels
+			const S = CONTENT_W / SVG_WIDTH;
+
+			const canvas = document.createElement('canvas');
+			canvas.width  = PAGE_W;
+			canvas.height = PAGE_H;
+			const ctx = canvas.getContext('2d')!;
+
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, PAGE_W, PAGE_H);
+
+			const fontName = mode === 'tracing' ? 'LearningCurveDashed' : 'LearningCurve';
+			const fontSize = worksheetFontSize * S;
+
+			const drawLine = (text: string | null, y: number) => {
+				const dY = y + worksheetDescender * S;
+				const bY = y + worksheetBaseline * S;
+				const xY = y + worksheetXHeight * S;
+				const cY = y + worksheetCapHeight * S;
+
+				ctx.setLineDash([]);
+				ctx.strokeStyle = printDescenderColor;
+				ctx.globalAlpha = 1;
+				ctx.lineWidth = S;
+				ctx.beginPath(); ctx.moveTo(MARGIN, dY); ctx.lineTo(MARGIN + CONTENT_W, dY); ctx.stroke();
+
+				ctx.strokeStyle = printBaselineColor;
+				ctx.globalAlpha = printBaselineOpacity;
+				ctx.beginPath(); ctx.moveTo(MARGIN, bY); ctx.lineTo(MARGIN + CONTENT_W, bY); ctx.stroke();
+				ctx.globalAlpha = 1;
+
+				ctx.strokeStyle = printXHeightColor;
+				ctx.lineWidth = 0.75 * S;
+				ctx.setLineDash([4 * S, 4 * S]);
+				ctx.beginPath(); ctx.moveTo(MARGIN, xY); ctx.lineTo(MARGIN + CONTENT_W, xY); ctx.stroke();
+
+				ctx.strokeStyle = printCapHeightColor;
+				ctx.setLineDash([2 * S, 6 * S]);
+				ctx.beginPath(); ctx.moveTo(MARGIN, cY); ctx.lineTo(MARGIN + CONTENT_W, cY); ctx.stroke();
+				ctx.setLineDash([]);
+
+				if (text) {
+					ctx.font = `${fontSize}px ${fontName}, cursive`;
+					// word-spacing supported in Chrome 99+, Firefox 95+, Safari 16+
+					(ctx as unknown as Record<string, string>).wordSpacing = `${wordSpacing * fontSize}px`;
+					ctx.fillStyle = printTracingColor;
+					ctx.fillText(text, MARGIN + 8 * S, bY);
+				}
+			};
+
+			let y = MARGIN;
+			for (const line of lines)           { drawLine(line, y); y += worksheetLineHeight * S; }
+			for (let i = 0; i < blankLines; i++) { drawLine(null, y); y += worksheetLineHeight * S; }
+
+			// Footer
+			ctx.font = `${11 * SC}px sans-serif`;
+			ctx.fillStyle = '#9ca3af';
+			ctx.textAlign = 'right';
+			ctx.fillText(`${verseRef(selectedVerse)} (${data.translation.toUpperCase()})`, PAGE_W - MARGIN, PAGE_H - MARGIN * 0.5);
+
+			const pdf = new jsPDF({ orientation: 'portrait', unit: 'in', format: 'letter' });
+			pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 8.5, 11);
+			pdf.save(`${verseRef(selectedVerse).replace(/[\s:]/g, '-')}-worksheet.pdf`);
+		} finally {
+			pdfLoading = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -372,6 +455,13 @@
 					style={buttonStyle(INDIGO)}
 					class="w-full text-sm font-semibold py-2 rounded-lg disabled:cursor-not-allowed">
 					Print Worksheet
+				</button>
+				<button
+					onclick={downloadPdf}
+					disabled={!selectedVerse || pdfLoading}
+					style={buttonStyle(EMERALD)}
+					class="w-full text-sm font-semibold py-2 rounded-lg disabled:cursor-not-allowed">
+					{pdfLoading ? 'Generating…' : 'Download PDF'}
 				</button>
 			</div>
 		</div>
