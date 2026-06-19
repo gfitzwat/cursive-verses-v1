@@ -1,6 +1,6 @@
 # Cursive Verses
 
-A handwriting worksheet generator for Bible verses. Choose a translation, book, chapter, and verse — then print or download a PDF worksheet with ruled lines and your selected verse in cursive or print lettering.
+A handwriting worksheet generator for Bible verses. Choose a translation, book, chapter, and verse — then print with ruled lines and your selected verse in cursive or print lettering.
 
 **Live site:** https://gfitzwat.github.io/cursive-verses-v1/
 
