@@ -1,4 +1,4 @@
-export type WorksheetStyle = 'print' | 'cursive';
+export type WorksheetStyle = "cursive";
 
 export const FONT_SIZE = 44;
 export const LINE_HEIGHT = 82;
@@ -16,24 +16,30 @@ export function wrapText(
 	text: string,
 	fontFamily: string,
 	fontSize: number,
-	maxWidth: number
+	maxWidth: number,
+	wordSpacingEm: number = 0
 ): string[] {
 	// SSR fallback — canvas not available
-	if (typeof document === 'undefined') {
+	if (typeof document === "undefined") {
 		return chunkWords(text, Math.floor(maxWidth / (fontSize * 0.48)));
 	}
 
-	const canvas = document.createElement('canvas');
-	const ctx = canvas.getContext('2d')!;
+	const canvas = document.createElement("canvas");
+	const ctx = canvas.getContext("2d")!;
 	ctx.font = `${fontSize}px ${fontFamily}`;
 
-	const words = text.split(' ');
+	// Extra units added per word gap (wordSpacingEm is relative to fontSize)
+	const wordSpacingPx = wordSpacingEm * fontSize;
+
+	const words = text.split(" ");
 	const lines: string[] = [];
-	let current = '';
+	let current = "";
 
 	for (const word of words) {
 		const test = current ? `${current} ${word}` : word;
-		if (ctx.measureText(test).width > maxWidth && current) {
+		const gaps = test.split(" ").length - 1;
+		const effectiveWidth = ctx.measureText(test).width + wordSpacingPx * gaps;
+		if (effectiveWidth > maxWidth && current) {
 			lines.push(current);
 			current = word;
 		} else {
@@ -46,15 +52,15 @@ export function wrapText(
 
 /** Character-count fallback used during SSR */
 export function chunkWords(text: string, charsPerLine = 45): string[] {
-	const words = text.split(' ');
+	const words = text.split(" ");
 	const lines: string[] = [];
-	let current = '';
+	let current = "";
 	for (const word of words) {
 		if (current.length + word.length + 1 > charsPerLine && current) {
 			lines.push(current.trim());
-			current = word + ' ';
+			current = word + " ";
 		} else {
-			current += word + ' ';
+			current += word + " ";
 		}
 	}
 	if (current.trim()) lines.push(current.trim());
