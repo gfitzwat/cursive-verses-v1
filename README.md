@@ -1,42 +1,39 @@
-# sv
+# Cursive Verses
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A handwriting worksheet generator for Bible verses. Choose a translation, book, chapter, and verse — then print or download a PDF worksheet with ruled lines and your selected verse in cursive or print lettering.
 
-## Creating a project
+**Live site:** https://gfitzwat.github.io/cursive-verses-v1/
 
-If you're seeing this, you've probably already done this step. Congrats!
+## Features
 
-```sh
-# create a new project
-npx sv create my-app
-```
+- 4 Bible translations: KJV, BSB, NET, WEB
+- Cursive and print lettering styles
+- Tracing and copywork modes
+- One-click PDF download
+- Advanced print settings: font size, line density, line darkness, word spacing
+- Fully static — no server, no account required
 
-To recreate this project with the same configuration:
+## Tech Stack
 
-```sh
-# recreate this project
-npx sv@0.15.4 create --template minimal --types ts --install npm .
-```
+- [SvelteKit](https://kit.svelte.dev/) with Svelte 5 runes
+- [Tailwind CSS v4](https://tailwindcss.com/)
+- [html2canvas](https://html2canvas.hertzen.com/) + [jsPDF](https://github.com/parallax/jsPDF) for PDF export
+- Deployed to GitHub Pages via GitHub Actions
 
 ## Developing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
 ```sh
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
 ## Building
 
-To create a production version of your app:
-
 ```sh
 npm run build
+npm run preview
 ```
 
-You can preview the production build with `npm run preview`.
+## License
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+MIT — see [LICENSE](LICENSE)
