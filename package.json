@@ -1,5 +1,5 @@
 {
-	"name": "cursive-verses",
+	"name": "cursive-verses-v1",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
@@ -25,7 +25,6 @@
 		"vite": "^8.0.7"
 	},
 	"dependencies": {
-		"@sveltejs/adapter-cloudflare": "^7.2.8",
 		"letterpaths": "^1.0.2"
 	}
 }
